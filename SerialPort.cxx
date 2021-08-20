@@ -6,6 +6,7 @@
 #include <string>
 #include <dirent.h>
 #include <regex>
+#include <termios.h>
 
 std::vector<std::string> getSerialDevices(std::string dev_dir)
 {
@@ -35,57 +36,33 @@ std::vector<std::string> getSerialDevices(std::string dev_dir)
 	return port_names;
 }
 
-SerialPort::SerialPort()
+
+SerialPort::SerialPort(std::string device, unsigned int baud, CharSize cs, Parity parity, const StopBits stopbits)
 {
-	device = "";
-	state = CLOSED;
+        
+        if (!device.empty()) {
+                int fh = open(device.c_str(),O_RDONLY);
 
-	port_config.c_cflag &= ~CRTSCTS;
-	port_config.c_cflag &= ~CSTOPB;
+                if (fh > 0){
+                        this->device = device;
+                        close(fh);
+                } else {
+                        throw std::invalid_argument("device does not exist.");
+                }
 
-	port_config.c_cflag &= ~PARENB;
-	port_config.c_cflag &= ~PARODD;
-
-	port_config.c_cflag |=  (CLOCAL | CREAD) ;	
-
-	port_config.c_cflag &=  CSIZE;
-	port_config.c_cflag |=  CS8;
-
-	port_config.c_iflag &= ~(IXON | IXOFF | IXANY);
-	port_config.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | ICRNL | INLCR | IGNCR | IUTF8);
-	port_config.c_iflag &= ~(INPCK | IGNPAR);
-	port_config.c_lflag &= ~(ECHO | ECHOE | ECHONL | ICANON | ISIG | IEXTEN);
-
-	port_config.c_oflag &= ~OPOST;
-
-	return;
-}
-
-SerialPort::SerialPort(const std::string device, const speed_t baud, const CharSize cs, const Parity parity, const StopBits stopbits)
-{
-	int fh = open(device.c_str(),O_RDONLY);
-
-	if (fh > 0){
-		this->device = device;
-		std::cout << "device assigned successfully" << std::endl;
-		close(fh);
-   	} else {
-		throw std::invalid_argument("device does not exist.");
-	}
-
-	state = CLOSED;
+	state = closed;
 
 	//c_cflag settings
 	//disable RTS/CTS hardware flow control
 	port_config.c_cflag &= ~CRTSCTS;
 
-	if (stopbits==STPBIT_2 ){
+	if (stopbits==stpbit_2 ){
 		port_config.c_cflag |= CSTOPB;
 	} else {
 		port_config.c_cflag &= ~CSTOPB;
 	}
 
-	if (parity == EVEN){
+	if (parity == even){
 		port_config.c_cflag |= PARENB;
 		port_config.c_cflag &= ~PARODD;
 	} else if (parity == ODD){
@@ -103,25 +80,26 @@ SerialPort::SerialPort(const std::string device, const speed_t baud, const CharS
 
 	//character size setting. must clear size bits before assigning
 	//set to 8-bit byte size
-	port_config.c_cflag &=  CSIZE;
+	port_config.c_cflag &= ~CSIZE;
 	switch(cs){
-	case CS_8:
-		port_config.c_cflag |=  CS8;
+	case cs_8:
+		port_config.c_cflag |=  cs8;
 		break;
-	case CS_7:
-		port_config.c_cflag |=  CS7;
+	case cs_7:
+		port_config.c_cflag |=  cs7;
 		break;
-	case CS_6:
-		port_config.c_cflag |=  CS6;
+	case cs_6:
+		port_config.c_cflag |=  cs6;
 		break;
-	case CS_5:
-		port_config.c_cflag |=  CS5;
+	case cs_5:
+		port_config.c_cflag |=  cs5;
 		break;
 	default:
 		perror("error setting serial communication char size. SerialPort object not created.");
 		return;
 	}
 
+        //change port to raw mode.
 	//c_iflag settings
 	port_config.c_iflag &= ~(IXON | IXOFF | IXANY); //disable software (in-band) flow-control
 	port_config.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | ICRNL | INLCR | IGNCR | IUTF8); //ignore BREAK condition on input
@@ -133,6 +111,7 @@ SerialPort::SerialPort(const std::string device, const speed_t baud, const CharS
 	//c_oflag settings
 	port_config.c_oflag &= ~OPOST;
 
+        switch 
 	cfsetispeed(&port_config, baud);
 	cfsetospeed(&port_config, baud);
 
@@ -145,7 +124,7 @@ SerialPort::~SerialPort()
 		return;
 }
 
-void SerialPort::Connect()
+void SerialPort::Open()
 {
 	if (device.empty()){
 		throw std::runtime_error("device not set.");
@@ -172,9 +151,11 @@ void SerialPort::Connect()
 	}
 }
 
-void SerialPort::Disconnect()
+void SerialPort::Close()
 {
 	if(state == OPEN){
+                cfsetospeed(&port_config, B0);          
+                cfsetispeed(&port_config, B0);          
 		close(file_descriptor);
 		file_descriptor = 0;
 		state = CLOSED;

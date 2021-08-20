@@ -1,33 +1,11 @@
 #ifndef SERIAL_PORT_H_
 #define SERIAL_PORT_H_
-#include <string>
+
 #include <string>
 #include <vector>
-#include <termios.h>
 
-enum State {
-    CLOSED,
-    OPEN
-};
 
-enum Parity {
-	NONE,
-	EVEN,
-	ODD
-};
-
-enum StopBits {
-	STPBIT_1,
-	STPBIT_2
-};
-
-enum CharSize {
-	CS_5,
-	CS_6,
-	CS_7,
-	CS_8
-};
-
+/*
 enum Baud {
 	B_0,
 	B_1200,
@@ -37,27 +15,54 @@ enum Baud {
 	B_19200,
 	B_38400,
 	B_57600,
-	B_115200
+	B_115200,
+        B_250000
 };
-
+*/
 
 std::vector<std::string> getSerialDevices(std::string dev_dir);
 
 class SerialPort {
+        enum State {
+                closed,
+                open
+        };
+
+        enum Parity {
+        	noParity,
+        	even,
+        	odd
+        };
+
+        enum StopBits {
+        	stpbit_1,
+        	stpbit_2
+        };
+
+        enum CharSize {
+        	cs_5,
+        	cs_6,
+        	cs_7,
+        	cs_8
+        };
+
 	private:
-	State state;
 	std::string device;
-	speed_t baud;
-	int file_descriptor;
+	State portState;
+        CharSize portCharSize;
+        Parity portParity;
+        StopBits portStopBits 
+	unsigned int baud_rate;
+	int dev_file_descriptor;
 	struct termios port_config;
 
 	public:
 	SerialPort();
 	SerialPort(const std::string device = "",
-	           const speed_t baud = B115200,
-	           const CharSize cs = CS_8,
-	           const Parity parity = PARITY_DISABLED,
-	           const StopBits stopbits = STPBIT_1);
+	           const unsigned int baud = 0,
+	           const CharSize cs = cs_8,
+	           const Parity parity = noParity,
+	           const StopBits stopbits = stpbit_1);
 
 	~SerialPort();
 
@@ -68,8 +73,8 @@ class SerialPort {
 	void setStopBits(const StopBits stopbits);
 
 
-	void Connect();
-	void Disconnect();
+	void Open();
+	void Close();
 	int Read(std::string &s, size_t nbytes);
 	int Read(uint8_t buffer[], size_t nbytes);
 	int Read(std::vector<uint8_t> &buffer, size_t nbytes);
