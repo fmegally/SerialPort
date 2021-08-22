@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <stdint.h>
+#include <termios.h>
 
 /*
 enum Baud {
@@ -23,6 +24,8 @@ enum Baud {
 std::vector<std::string> getSerialDevices(std::string dev_dir);
 
 class SerialPort {
+        public:
+
         enum state_t {
                 portClosed,
                 portOpen
@@ -46,6 +49,29 @@ class SerialPort {
                 bs_8
         };
 
+        SerialPort(std::string device = "",
+                   uint32_t baud = 9600,
+                   bytesize_t bs = bs_8,
+                   parity_t parity = noParity,
+                   stopbits_t stopbits = stpbit_1);
+        ~SerialPort();
+        
+        void setDevice(std::string device);
+        void setBaud(uint32_t baud);
+        void setParity(parity_t parity);
+        void setByteSize(bytesize_t bs);
+        void setStopBits(stopbits_t stopbits);
+
+        void Open();
+        void Close();
+
+        int Read(std::string &s, size_t nbytes);
+        int Read(uint8_t buffer[], size_t nbytes);
+        int Read(std::vector<uint8_t> &buffer, size_t nbytes);
+        int Write(const uint8_t buffer[], size_t nbytes);
+        int Write(std::string buffer);
+        int Write(std::vector<uint8_t> buffer);
+        
         private:
         std::string device;
         int deviceFileDescriptor;
@@ -58,31 +84,8 @@ class SerialPort {
 
         struct termios portConfig;
         
+        //Helper functions
+        int convBaudToFlags(uint32_t baud);
         bool deviceExists(const std::string &device);
-
-        public:
-        SerialPort(std::string device = "",
-                   uint32_t baud = 9600,
-                   bytesize_t bs = bs_8,
-                   parity_t parity = noParity,
-                   stopbits_t stopbits = stpbit_1);
-
-        void setDevice(std::string device);
-        void setBaud(uint32_t baud);
-        void setParity(parity_t parity);
-        void setByteSize(bytesize_t bs);
-        void setStopBits(stopbits_t stopbits);
-
-
-        void Open();
-        void Close();
-
-        int Read(std::string &s, size_t nbytes);
-        int Read(uint8_t buffer[], size_t nbytes);
-        int Read(std::vector<uint8_t> &buffer, size_t nbytes);
-        int Write(const uint8_t buffer[], size_t nbytes);
-        int Write(std::string buffer);
-        int Write(std::vector<uint8_t> buffer);
-
 };
 #endif
