@@ -7,6 +7,8 @@
 #include <dirent.h>
 #include <regex>
 #include <termios.h>
+#include <sys/stat.h>
+
 
 std::vector<std::string> getSerialDevices(std::string dev_dir)
 {
@@ -36,6 +38,11 @@ std::vector<std::string> getSerialDevices(std::string dev_dir)
         return port_names;
 }
 
+bool SerialPort::deviceExists(const std::string &device_name)
+{
+        struct stat buff;
+        return (stat(device_name.c_str(),&buff) == 0);
+}
 
 SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_t parity, stopbits_t stopbits)
 {
@@ -66,7 +73,6 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
         } else if (parity == odd){
                 portConfig.c_cflag |= PARENB;
                 portConfig.c_cflag |= PARODD;
-
         } else {
                 portConfig.c_cflag &= ~PARENB;
                 portConfig.c_cflag &= ~PARODD;
@@ -99,64 +105,49 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
         /* Setup baud rate */
 
         switch(baud){
-        case 0: 
-                this->baudRate =  0;
-                cfsetispeed(&portConfig, B0);
-                cfsetospeed(&portConfig, B0);
-                break;
-
         case 1200: 
                 this->baudRate =  1200;
-                cfsetispeed(&portConfig, B1200);
-                cfsetospeed(&portConfig, B1200);
+                cfsetspeed(&portConfig, B1200);
                 break;
 
         case 2400: 
                 this->baudRate = 2400;
-                cfsetispeed(&portConfig, B2400);
-                cfsetospeed(&portConfig, B2400);
+                cfsetspeed(&portConfig, B2400);
                 break;
 
         case 4800: 
                 this->baudRate = 4800;
-                cfsetispeed(&portConfig, B4800);
-                cfsetospeed(&portConfig, B4800);
+                cfsetspeed(&portConfig, B4800);
                 break;
 
         case 9600: 
                 this->baudRate = 9600;
-                cfsetispeed(&portConfig, B9600);
-                cfsetospeed(&portConfig, B9600);
+                cfsetspeed(&portConfig, B9600);
                 break;
 
         case 19200: 
                 this->baudRate = 19200;
-                cfsetispeed(&portConfig, B19200);
-                cfsetospeed(&portConfig, B19200);
+                cfsetspeed(&portConfig, B19200);
                 break;
 
         case 38400: 
                 this->baudRate = 38400;
-                cfsetispeed(&portConfig, B38400);
-                cfsetospeed(&portConfig, B38400);
+                cfsetspeed(&portConfig, B38400);
                 break;
 
         case 57600: 
                 this->baudRate = 57600;
-                cfsetispeed(&portConfig, B57600);
-                cfsetospeed(&portConfig, B57600);
+                cfsetspeed(&portConfig, B57600);
                 break;
 
         case 115200: 
                 this->baudRate = 115200;
-                cfsetispeed(&portConfig, B115200);
-                cfsetospeed(&portConfig, B115200);
+                cfsetspeed(&portConfig, B115200);
                 break;
 
         case 250000: 
                 this->baudRate = 250000;
-                cfsetispeed(&portConfig, B250000);
-                cfsetospeed(&portConfig, B250000);
+                cfsetspeed(&portConfig, B250000);
                 break;
         
         default:
@@ -164,6 +155,7 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
         }
 
         if (!device.empty()) {
+                /* Try and open the device specified */
                 this->deviceFileDescriptor = open(device.c_str(),O_RDWR);
 
                 if (deviceFileDescriptor > 0){
@@ -173,13 +165,13 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
                 }
 
                 int t = tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+
                 if(t == 0){
                         this->state = open;
                 } else {
                         throw std::runtime_error("Could not set port attributes");
                 }
         }
-
         return;
 }
 
@@ -196,7 +188,6 @@ void SerialPort::Open()
                 throw std::runtime_error("device not set.");
         }
 
-
         /* Check if baud rate is set. */ 
         if (cfgetospeed(&portConfig)==0 && cfgetispeed(&portConfig)==0)
         {
@@ -205,13 +196,12 @@ void SerialPort::Open()
 
         if(state == closed){
                 deviceFileDescriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
-                if (deviceFileDescriptor == -1){
-                        throw std::runtime_error("could not open device");
-                } else {
-                        fcntl(deviceFileDescriptor, F_SETFL, 0);
-                        tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
-                        state = open;
-                }
+                if (deviceFileDescriptor == -1) throw std::runtime_error("could not open device");
+                
+                fcntl(deviceFileDescriptor, F_SETFL, 0);
+                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+                state = open;
+               
         } else {
                 throw std::logic_error("port is open.");
         }
@@ -220,8 +210,7 @@ void SerialPort::Open()
 void SerialPort::Close()
 {
         if(state == open){
-                cfsetospeed(&portConfig, B0);          
-                cfsetispeed(&portConfig, B0);          
+                cfsetspeed(&portConfig, B0);          
                 tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
                 close(deviceFileDescriptor);
                 deviceFileDescriptor = 0;
@@ -337,116 +326,96 @@ int SerialPort::Write(std::vector<uint8_t> buffer)
         return n;
 }       
 
-void SerialPort::setDevice(std::string device)
+void SerialPort::setDevice(std::string new_device)
 {
-        state_t original_state = this->state;
-        if (state != closed) this->Close();
+        if ( device == this->device) return;
 
-        int fh = open(device.c_str(),O_RDONLY);
-        if (fh > 0){
-                this->device = device;
-                close(fh);
-        }  else {
-                throw std::invalid_argument("device does not exist.");
-        }
+        if (state == open) {
+                if (deviceExists(new_device)){
+                        close(deviceFileDescriptor);
+                        device = new_device;
+                        deviceFileDescriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
+                         
 
-        if (original_state == open) this->Open();
+                }  else {
+                        throw std::invalid_argument("device does not exist.");
+                }
+                this->Close();
+                 
+          
         return;
 }
 
 void SerialPort::setBaud(uint32_t baud)
 {
-        state_t original_state = this->state;
-        if (state == closed) this->Close();
-
         switch(baud){
-                case 0: 
-                this->baudRate = 0;
-                cfsetispeed(&portConfig, B0);
-                cfsetospeed(&portConfig, B0);
-                break;
-
                 case 1200: 
                 this->baudRate = 1200;
-                cfsetispeed(&portConfig, B1200);
-                cfsetospeed(&portConfig, B1200);
+                cfsetspeed(&portConfig, B1200);
                 break;
 
                 case 2400: 
                 this->baudRate = 2400;
-                cfsetispeed(&portConfig, B2400);
-                cfsetospeed(&portConfig, B2400);
+                cfsetspeed(&portConfig, B2400);
                 break;
 
                 case 4800: 
                 this->baudRate = 4800;
-                cfsetispeed(&portConfig, B4800);
-                cfsetospeed(&portConfig, B4800);
+                cfsetspeed(&portConfig, B4800);
                 break;
 
                 case 9600: 
                 this->baudRate = 9600;
-                cfsetispeed(&portConfig, B9600);
-                cfsetospeed(&portConfig, B9600);
+                cfsetspeed(&portConfig, B9600);
                 break;
 
                 case 19200: 
                 this->baudRate = 19200;
-                cfsetispeed(&portConfig, B19200);
-                cfsetospeed(&portConfig, B19200);
+                cfsetspeed(&portConfig, B19200);
                 break;
 
                 case 38400: 
                 this->baudRate = 38400;
-                cfsetispeed(&portConfig, B38400);
-                cfsetospeed(&portConfig, B38400);
+                cfsetspeed(&portConfig, B38400);
                 break;
 
                 case 57600: 
                 this->baudRate = 57600;
-                cfsetispeed(&portConfig, B57600);
-                cfsetospeed(&portConfig, B57600);
+                cfsetspeed(&portConfig, B57600);
                 break;
 
                 case 115200: 
                 this->baudRate = 115200;
-                cfsetispeed(&portConfig, B115200);
-                cfsetospeed(&portConfig, B115200);
+                cfsetspeed(&portConfig, B115200);
                 break;
 
                 case 250000: 
                 this->baudRate = 250000;
-                cfsetispeed(&portConfig, B250000);
-                cfsetospeed(&portConfig, B250000);
+                cfsetspeed(&portConfig, B250000);
                 break;
                 
                 default:
                 throw std::invalid_argument("baud rate not supported.");
-        
-        if (original_state == open) this->Open();
+                         
+        }
+        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 
 void SerialPort::setParity(parity_t parity)
 {
-        state_t original_state = this->state;
-        if (state == closed) this->Close();
-        
         if (parity == even){
                 portConfig.c_cflag |= PARENB;
         } else {
                 portConfig.c_cflag &= ~PARENB;
         }
-
-        if (original_state == open) this->Open();
+        
+        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 
 void SerialPort::setCharSize(bytesize_t cs)
 {
-        state_t original_state = this->state;
-        if (state == closed) this->Close();
-
         switch(cs){
         case CS_8:
                 portConfig.c_cflag |=  CS8;
@@ -464,23 +433,20 @@ void SerialPort::setCharSize(bytesize_t cs)
                 throw std::invalid_argument("argument did not match any of the switch cases.");
         }
 
-        if (original_state == open) this->Open();
+        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 
 }
 
 void SerialPort::setStopBits(stopbits_t stopbits)
 {
-        state_t original_state = this->state;
-        if (state == closed) this->Close();
-        
         if (stopbits==stpbit_2 ){
                 portConfig.c_cflag |= CSTOPB;
         } else {
                 portConfig.c_cflag &= ~CSTOPB;
         }
 
-        if (original_state == open) this->Open();
+        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 

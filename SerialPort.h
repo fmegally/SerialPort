@@ -57,6 +57,8 @@ class SerialPort {
         stopbits_t stopBits;
 
         struct termios portConfig;
+        
+        bool deviceExists(const std::string &device);
 
         public:
         SerialPort(std::string device = "",
