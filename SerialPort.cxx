@@ -51,108 +51,15 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
         portConfig.c_cflag |=  (CLOCAL | CREAD) ;      
         portConfig.c_iflag &= ~(IXON | IXOFF | IXANY); //disable software (in-band) flow-control
         portConfig.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | ICRNL | INLCR | IGNCR | IUTF8); //ignore BREAK condition on input
-        portConfig.c_iflag &= ~(INPCK | IGNPAR);
-        portConfig.c_lflag &= ~(ECHO | ECHOE | ECHONL | ICANON | ISIG | IEXTEN);
-        portConfig.c_oflag &= ~OPOST;
-        
-        /* Disable RTS/CTS hardware flow control */
-        portConfig.c_cflag &= ~CRTSCTS;
+        portConfig.c_iflag &= ~(INPCK | IGNPAR); 
+        portConfig.c_lflag &= ~(ECHO | ECHOE | ECHONL | ICANON | ISIG | IEXTEN); // Disables canonical mode and echo to Rx
+        portConfig.c_oflag &= ~OPOST; // Disables implementation-defined ouput processsing. 
+        portConfig.c_cflag &= ~CRTSCTS; //Disables hardware flow control lines Clear-to-Send and Ready-to-Send
 
-        /* Setup stop bits */
-        if (stopbits==stpbit_2 ){
-                portConfig.c_cflag |= CSTOPB;
-        } else {
-                portConfig.c_cflag &= ~CSTOPB;
-        }
-
-        /* Setup parity */
-
-        if (parity == even){
-                portConfig.c_cflag |= PARENB;
-                portConfig.c_cflag &= ~PARODD;
-        } else if (parity == odd){
-                portConfig.c_cflag |= PARENB;
-                portConfig.c_cflag |= PARODD;
-        } else {
-                portConfig.c_cflag &= ~PARENB;
-                portConfig.c_cflag &= ~PARODD;
-        }
-
-
-        /* Byte size setting. must clear size bits before assigning
-           set to 8-bit byte size */
-
-        portConfig.c_cflag &= ~CSIZE;
-        switch(bs){
-        case bs_8:
-                portConfig.c_cflag |=  cs8;
-                break;
-        case bs_7:
-                portConfig.c_cflag |=  cs7;
-                break;
-        case bs_6:
-                portConfig.c_cflag |=  cs6;
-                break;
-        case bs_5:
-                portConfig.c_cflag |=  cs5;
-                break;
-        default:
-                perror("error setting serial communication char size. SerialPort object not created.");
-                return;
-        }
-
-
-        /* Setup baud rate */
-
-        switch(baud){
-        case 1200: 
-                this->baudRate =  1200;
-                cfsetspeed(&portConfig, B1200);
-                break;
-
-        case 2400: 
-                this->baudRate = 2400;
-                cfsetspeed(&portConfig, B2400);
-                break;
-
-        case 4800: 
-                this->baudRate = 4800;
-                cfsetspeed(&portConfig, B4800);
-                break;
-
-        case 9600: 
-                this->baudRate = 9600;
-                cfsetspeed(&portConfig, B9600);
-                break;
-
-        case 19200: 
-                this->baudRate = 19200;
-                cfsetspeed(&portConfig, B19200);
-                break;
-
-        case 38400: 
-                this->baudRate = 38400;
-                cfsetspeed(&portConfig, B38400);
-                break;
-
-        case 57600: 
-                this->baudRate = 57600;
-                cfsetspeed(&portConfig, B57600);
-                break;
-
-        case 115200: 
-                this->baudRate = 115200;
-                cfsetspeed(&portConfig, B115200);
-                break;
-
-        case 250000: 
-                this->baudRate = 250000;
-                cfsetspeed(&portConfig, B250000);
-                break;
-        
-        default:
-                throw std::invalid_argument("baud rate not supported.");
-        }
+        setStopBits(stopbits);
+        setParity(parity);
+        setByteSize(bs);
+        setBaud(baud);
 
         if (!device.empty()) {
                 /* Try and open the device specified */
@@ -167,7 +74,7 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
                 int t = tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
 
                 if(t == 0){
-                        this->state = open;
+                        this->portState = portOpen;
                 } else {
                         throw std::runtime_error("Could not set port attributes");
                 }
@@ -188,33 +95,27 @@ void SerialPort::Open()
                 throw std::runtime_error("device not set.");
         }
 
-        /* Check if baud rate is set. */ 
-        if (cfgetospeed(&portConfig)==0 && cfgetispeed(&portConfig)==0)
-        {
-                throw std::runtime_error("baud rate is 0");
-        }
-
-        if(state == closed){
+        if(portState == portClosed){
                 deviceFileDescriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
                 if (deviceFileDescriptor == -1) throw std::runtime_error("could not open device");
-                
                 fcntl(deviceFileDescriptor, F_SETFL, 0);
+                t
                 tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
-                state = open;
+                portState = portOpen;
                
         } else {
-                throw std::logic_error("port is open.");
+                throw std::logic_error("port is already open.");
         }
 }
 
 void SerialPort::Close()
 {
-        if(state == open){
+        if(portState == portOpen){
                 cfsetspeed(&portConfig, B0);          
                 tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
                 close(deviceFileDescriptor);
                 deviceFileDescriptor = 0;
-                state = closed;
+                portState = portClosed;
         } else {
                 throw std::logic_error("port not open");
         }
@@ -224,7 +125,7 @@ void SerialPort::Close()
 
 int SerialPort::Read(std::vector<uint8_t> &dst, size_t nbytes)
 {
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't read from closed port.");
         }
 
@@ -251,7 +152,7 @@ int SerialPort::Read(uint8_t buffer[], size_t nbytes)
 
         tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
 
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't read from closed port.");
         }
 
@@ -264,7 +165,7 @@ int SerialPort::Read(uint8_t buffer[], size_t nbytes)
 
 int SerialPort::Read(std::string &dst, size_t nbytes)
 {
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't read from closed port.");
         }
 
@@ -286,7 +187,7 @@ int SerialPort::Read(std::string &dst, size_t nbytes)
 
 int SerialPort::Write(const uint8_t buffer[], size_t nbytes)
 {
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't write to closed port.");
         }
 
@@ -299,7 +200,7 @@ int SerialPort::Write(const uint8_t buffer[], size_t nbytes)
 
 int SerialPort::Write(std::string buffer)
 {
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't write to closed port.");
         }
 
@@ -313,7 +214,7 @@ int SerialPort::Write(std::string buffer)
 
 int SerialPort::Write(std::vector<uint8_t> buffer)
 {
-        if(state == closed){
+        if(portState == portClosed){
                 throw std::logic_error("can't write to closed port.");
         }
 
@@ -328,27 +229,25 @@ int SerialPort::Write(std::vector<uint8_t> buffer)
 
 void SerialPort::setDevice(std::string new_device)
 {
-        if ( device == this->device) return;
-
-        if (state == open) {
+        if (device != new_device) {
                 if (deviceExists(new_device)){
-                        close(deviceFileDescriptor);
+                        if (portState == portOpen){
+                                close(deviceFileDescriptor);
+                                deviceFileDescriptor = open(new_device.c_str(), O_RDWR | O_NOCTTY);
+                                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+                        } 
                         device = new_device;
-                        deviceFileDescriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
-                         
-
-                }  else {
-                        throw std::invalid_argument("device does not exist.");
-                }
-                this->Close();
-                 
-          
+                        
+                } else {
+                        throw std::invalid_argument("device does not exist");
+                } 
+        }
         return;
 }
 
-void SerialPort::setBaud(uint32_t baud)
-{
-        switch(baud){
+void SerialPort::setBaud(uint32_t baud){
+        switch(baud)
+        {
                 case 1200: 
                 this->baudRate = 1200;
                 cfsetspeed(&portConfig, B1200);
@@ -398,7 +297,7 @@ void SerialPort::setBaud(uint32_t baud)
                 throw std::invalid_argument("baud rate not supported.");
                          
         }
-        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (portState == portOpen) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 
@@ -410,30 +309,30 @@ void SerialPort::setParity(parity_t parity)
                 portConfig.c_cflag &= ~PARENB;
         }
         
-        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (portState == portOpen) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 
-void SerialPort::setCharSize(bytesize_t cs)
+void SerialPort::setByteSize(bytesize_t bs)
 {
-        switch(cs){
-        case CS_8:
+        switch(bs){
+        case bs_8:
                 portConfig.c_cflag |=  CS8;
                 break;
-        case CS_7:
+        case bs_7:
                 portConfig.c_cflag |=  CS7;
                 break;
-        case CS_6:
+        case bs_6:
                 portConfig.c_cflag |=  CS6;
                 break;
-        case CS_5:
+        case bs_5:
                 portConfig.c_cflag |=  CS5;
                 break;
         default:
                 throw std::invalid_argument("argument did not match any of the switch cases.");
         }
 
-        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (portState == portOpen) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 
 }
@@ -446,7 +345,7 @@ void SerialPort::setStopBits(stopbits_t stopbits)
                 portConfig.c_cflag &= ~CSTOPB;
         }
 
-        if (state == open) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (portState == portOpen) tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
         return;
 }
 

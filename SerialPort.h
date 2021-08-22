@@ -24,8 +24,8 @@ std::vector<std::string> getSerialDevices(std::string dev_dir);
 
 class SerialPort {
         enum state_t {
-                closed,
-                open
+                portClosed,
+                portOpen
         };
 
         enum parity_t {
@@ -62,13 +62,13 @@ class SerialPort {
 
         public:
         SerialPort(std::string device = "",
-                   uint32_t baud = 0,
-                   bytesize_t bs = cs_8,
+                   uint32_t baud = 9600,
+                   bytesize_t bs = bs_8,
                    parity_t parity = noParity,
                    stopbits_t stopbits = stpbit_1);
 
         void setDevice(std::string device);
-        void setBaud(baud_t baud);
+        void setBaud(uint32_t baud);
         void setParity(parity_t parity);
         void setByteSize(bytesize_t bs);
         void setStopBits(stopbits_t stopbits);
