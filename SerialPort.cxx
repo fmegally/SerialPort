@@ -1,4 +1,4 @@
-#include "SerialPort.h"
+#include "SerialPort.hxx"
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
