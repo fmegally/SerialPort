@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 
 
-std::vector<std::string> getSerialDevices(std::string dev_dir)
+std::vector<std::string> get_serial_devices(std::string dev_dir)
 {
         const char* devices_folder = dev_dir.c_str();
         std::vector<std::string> port_names;
@@ -38,43 +38,43 @@ std::vector<std::string> getSerialDevices(std::string dev_dir)
         return port_names;
 }
 
-bool SerialPort::deviceExists(const std::string &device_name)
+bool SerialPort::device_exists(const std::string &device_name)
 {
         struct stat buff;
         return (stat(device_name.c_str(),&buff) == 0);
 }
 
-SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_t parity, stopbits_t stopbits)
+SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_t parity, stopbits_t stop_bits)
 {
         //Boilerplate setup for most relevant UART applications i.e communication with MCUs
         //enable local mode (no modem control lines) & receiver (reading)
-        portConfig.c_cflag |=  (CLOCAL | CREAD) ;      
-        portConfig.c_iflag &= ~(IXON | IXOFF | IXANY); //disable software (in-band) flow-control
-        portConfig.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | ICRNL | INLCR | IGNCR | IUTF8); //ignore BREAK condition on input
-        portConfig.c_iflag &= ~(INPCK | IGNPAR); 
-        portConfig.c_lflag &= ~(ECHO | ECHOE | ECHONL | ICANON | ISIG | IEXTEN); // Disables canonical mode and echo to Rx
-        portConfig.c_oflag &= ~OPOST; // Disables implementation-defined ouput processsing. 
-        portConfig.c_cflag &= ~CRTSCTS; //Disables hardware flow control lines Clear-to-Send and Ready-to-Send
+        port_config.c_cflag |=  (CLOCAL | CREAD) ;      
+        port_config.c_iflag &= ~(IXON | IXOFF | IXANY); //disable software (in-band) flow-control
+        port_config.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | ICRNL | INLCR | IGNCR | IUTF8); //ignore BREAK condition on input
+        port_config.c_iflag &= ~(INPCK | IGNPAR); 
+        port_config.c_lflag &= ~(ECHO | ECHOE | ECHONL | ICANON | ISIG | IEXTEN); // Disables canonical mode and echo to Rx
+        port_config.c_oflag &= ~OPOST; // Disables implementation-defined ouput processsing. 
+        port_config.c_cflag &= ~CRTSCTS; //Disables hardware flow control lines Clear-to-Send and Ready-to-Send
 
-        setStopBits(stopbits);
-        setParity(parity);
-        setByteSize(bs);
-        setBaud(baud);
+        set_stop_bits(stop_bits);
+        set_parity(parity);
+        set_byte_size(bs);
+        set_baud(baud);
 
         if (!device.empty()) {
                 /* Try and open the device specified */
-                this->deviceFileDescriptor = open(device.c_str(),O_RDWR);
+                this->device_file_descriptor = open(device.c_str(),O_RDWR);
 
-                if (deviceFileDescriptor > 0){
+                if (device_file_descriptor > 0){
                         this->device = device;
                 } else {
                         throw std::invalid_argument("device does not exist.");
                 }
 
-                int t = tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+                int t = tcsetattr(device_file_descriptor, TCSANOW, &port_config);
 
                 if(t == 0){
-                        this->portState = portOpen;
+                        this->port_state = PORTOPEN;
                 } else {
                         throw std::runtime_error("Could not set port attributes");
                 }
@@ -84,39 +84,39 @@ SerialPort::SerialPort(std::string device, uint32_t baud, bytesize_t bs, parity_
 
 SerialPort::~SerialPort()
 {
-                close(deviceFileDescriptor);
+                close(device_file_descriptor);
                 return;
 }
 
-void SerialPort::Open()
+void SerialPort::open_port()
 {
         /* Check if device name is set before trying to open. */
         if (device.empty()){
                 throw std::runtime_error("device not set.");
         }
 
-        if(portState == portClosed){
-                deviceFileDescriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
-                if (deviceFileDescriptor == -1) throw std::runtime_error("could not open device");
-                fcntl(deviceFileDescriptor, F_SETFL, 0);
-                setBaud(baudRate);
-                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
-                portState = portOpen;
+        if(port_state == PORTCLOSED){
+                device_file_descriptor = open(device.c_str(), O_RDWR | O_NOCTTY);
+                if (device_file_descriptor == -1) throw std::runtime_error("could not open device");
+                fcntl(device_file_descriptor, F_SETFL, 0);
+                set_baud(baud_rate);
+                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
+                port_state = PORTOPEN;
                
         } else {
                 throw std::logic_error("port is already open.");
         }
 }
 
-void SerialPort::Close()
+void SerialPort::close_port()
 {
-        if(portState == portOpen){
-                tcdrain(deviceFileDescriptor);
-                cfsetspeed(&portConfig, B0);
-                tcsetattr(deviceFileDescriptor, TCSADRAIN, &portConfig);
-                close(deviceFileDescriptor);
-                deviceFileDescriptor = 0;
-                portState = portClosed;
+        if(port_state == PORTOPEN){
+                tcdrain(device_file_descriptor);
+                cfsetspeed(&port_config, B0);
+                tcsetattr(device_file_descriptor, TCSADRAIN, &port_config);
+                close(device_file_descriptor);
+                device_file_descriptor = 0;
+                port_state = PORTCLOSED;
         } else {
                 throw std::logic_error("port not open");
         }
@@ -124,20 +124,20 @@ void SerialPort::Close()
         return;
 }
 
-int SerialPort::Read(std::vector<uint8_t> &dst, size_t nbytes)
+int SerialPort::receive(std::vector<uint8_t> &dst, size_t nbytes)
 {
-        if(portState == portClosed){
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't read from closed port.");
         }
 
-        portConfig.c_cc[VMIN] = nbytes;
-        portConfig.c_cc[VTIME] = 0;
+        port_config.c_cc[VMIN] = nbytes;
+        port_config.c_cc[VTIME] = 0;
 
-        tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        tcsetattr(device_file_descriptor, TCSANOW, &port_config);
         
         char c_buffer[nbytes];
 
-        int n = read(deviceFileDescriptor, c_buffer, nbytes);
+        int n = read(device_file_descriptor, c_buffer, nbytes);
         if (n == -1) {
                 throw std::runtime_error("could not read from ttyS*");
         }
@@ -146,38 +146,38 @@ int SerialPort::Read(std::vector<uint8_t> &dst, size_t nbytes)
         return n;
 }
 
-int SerialPort::Read(uint8_t buffer[], size_t nbytes)
+int SerialPort::receive(uint8_t buffer[], size_t nbytes)
 {
-        portConfig.c_cc[VMIN] = nbytes;
-        portConfig.c_cc[VTIME] = 0;
+        port_config.c_cc[VMIN] = nbytes;
+        port_config.c_cc[VTIME] = 0;
 
-        tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        tcsetattr(device_file_descriptor, TCSANOW, &port_config);
 
-        if(portState == portClosed){
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't read from closed port.");
         }
 
-        int n = read(deviceFileDescriptor, buffer, nbytes);
+        int n = read(device_file_descriptor, buffer, nbytes);
         if (n == -1) {
                 throw std::runtime_error("could not read from ttyS*");
         }
         return n;
 }
 
-int SerialPort::Read(std::string &dst, size_t nbytes)
+int SerialPort::receive(std::string &dst, size_t nbytes)
 {
-        if(portState == portClosed){
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't read from closed port.");
         }
 
-        portConfig.c_cc[VMIN] = nbytes;
-        portConfig.c_cc[VTIME] = 0;
+        port_config.c_cc[VMIN] = nbytes;
+        port_config.c_cc[VTIME] = 0;
         
         char c_buffer[nbytes];
 
-        tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        tcsetattr(device_file_descriptor, TCSANOW, &port_config);
 
-        int n = read(deviceFileDescriptor, c_buffer, nbytes);
+        int n = read(device_file_descriptor, c_buffer, nbytes);
         if (n == -1) {
                 throw std::runtime_error("could not read from ttyS*");
         }
@@ -186,26 +186,46 @@ int SerialPort::Read(std::string &dst, size_t nbytes)
         return n;
 }
 
-int SerialPort::Write(const uint8_t buffer[], size_t nbytes)
+int SerialPort::transmit(const uint8_t buffer[], size_t nbytes)
 {
-        if(portState == portClosed){
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't write to closed port.");
         }
 
-        int n = write(deviceFileDescriptor, buffer, nbytes);
+        int n = write(device_file_descriptor, buffer, nbytes);
         if (n == -1) {
                 throw std::runtime_error("could not write to  ttyS*");
         }
         return n;
 }
 
-int SerialPort::Write(std::string buffer)
+uint8_t SerialPort::get_byte(void)
 {
-        if(portState == portClosed){
+        uint8_t c;
+
+        port_config.c_cc[VMIN] = 1;
+        port_config.c_cc[VTIME] = 0;
+
+        tcsetattr(device_file_descriptor, TCSANOW, &port_config);
+
+        if(port_state == PORTCLOSED){
+                throw std::logic_error("can't read from closed port.");
+        }
+
+        int n = read(device_file_descriptor, &c, sizeof(uint8_t));
+        if (n == -1) {
+                throw std::runtime_error("could not read from ttyS*");
+        }
+        return c;
+}
+
+int SerialPort::transmit(std::string buffer)
+{
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't write to closed port.");
         }
 
-        int n = write(deviceFileDescriptor, buffer.c_str(), buffer.length());
+        int n = write(device_file_descriptor, buffer.c_str(), buffer.length());
         if (n == -1) {
                 throw std::runtime_error("could not write to  ttyS*");
         }
@@ -213,13 +233,13 @@ int SerialPort::Write(std::string buffer)
         return n;
 }
 
-int SerialPort::Write(std::vector<uint8_t> buffer)
+int SerialPort::transmit(std::vector<uint8_t> buffer)
 {
-        if(portState == portClosed){
+        if(port_state == PORTCLOSED){
                 throw std::logic_error("can't write to closed port.");
         }
 
-        int n = write(deviceFileDescriptor, &buffer[0], buffer.size());
+        int n = write(device_file_descriptor, &buffer[0], buffer.size());
 
         if (n == -1) {
                 throw std::runtime_error("could not write to  ttyS*");
@@ -228,14 +248,14 @@ int SerialPort::Write(std::vector<uint8_t> buffer)
         return n;
 }       
 
-void SerialPort::setDevice(std::string new_device)
+void SerialPort::set_device(std::string new_device)
 {
         if (device != new_device) {
-                if (deviceExists(new_device)){
-                        if (portState == portOpen){
-                                close(deviceFileDescriptor);
-                                deviceFileDescriptor = open(new_device.c_str(), O_RDWR | O_NOCTTY);
-                                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+                if (device_exists(new_device)){
+                        if (port_state == PORTOPEN){
+                                close(device_file_descriptor);
+                                device_file_descriptor = open(new_device.c_str(), O_RDWR | O_NOCTTY);
+                                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
                         } 
                         device = new_device;
                         
@@ -246,7 +266,7 @@ void SerialPort::setDevice(std::string new_device)
         return;
 }
 
-int SerialPort::convBaudToFlags(uint32_t baud)
+int SerialPort::baud_to_flags(uint32_t baud)
 {
         switch(baud)
                 {
@@ -287,71 +307,73 @@ int SerialPort::convBaudToFlags(uint32_t baud)
                 }
 }
 
-void SerialPort::setBaud(uint32_t baud)
+void SerialPort::set_baud(uint32_t baud)
 {
-        this->baudRate = baud;
-        cfsetspeed(&portConfig, convBaudToFlags(baud));
-        if (portState == portOpen) {
-                tcdrain(deviceFileDescriptor);
-                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        this->baud_rate = baud;
+        cfsetspeed(&port_config, baud_to_flags(baud));
+        if (port_state == PORTOPEN) {
+                tcdrain(device_file_descriptor);
+                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
         }
         return;
 }
 
-void SerialPort::setParity(parity_t parity)
+void SerialPort::set_parity(parity_t parity)
 {
-        if (parity == even){
-                portConfig.c_cflag |= PARENB;
+        if (parity == EVEN){
+                port_config.c_cflag |= PARENB;
         } else {
-                portConfig.c_cflag &= ~PARENB;
+                port_config.c_cflag &= ~PARENB;
         }
         
-        if (portState == portOpen) {
-                tcdrain(deviceFileDescriptor);
-                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (port_state == PORTOPEN) {
+                tcdrain(device_file_descriptor);
+                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
         }
         return;
 }
 
-void SerialPort::setByteSize(bytesize_t bs)
+void SerialPort::set_byte_size(bytesize_t bs)
 {
         switch(bs){
-        case bs_8:
-                portConfig.c_cflag |=  CS8;
+        case BS_8:
+                port_config.c_cflag |=  CS8;
                 break;
-        case bs_7:
-                portConfig.c_cflag |=  CS7;
+        case BS_7:
+                port_config.c_cflag |=  CS7;
                 break;
-        case bs_6:
-                portConfig.c_cflag |=  CS6;
+        case BS_6:
+                port_config.c_cflag |=  CS6;
                 break;
-        case bs_5:
-                portConfig.c_cflag |=  CS5;
+        case BS_5:
+                port_config.c_cflag |=  CS5;
                 break;
         default:
                 throw std::invalid_argument("argument did not match any of the switch cases.");
         }
         
-        if (portState == portOpen) {
-                tcdrain(deviceFileDescriptor);
-                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (port_state == PORTOPEN) {
+                tcdrain(device_file_descriptor);
+                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
         }
 
         return;
 
 }
 
-void SerialPort::setStopBits(stopbits_t stopbits)
+void SerialPort::set_stop_bits(stopbits_t sb)
 {
-        if (stopbits==stpbit_2 ){
-                portConfig.c_cflag |= CSTOPB;
+        stop_bits = sb;
+
+        if (sb==STPBIT_2 ){
+                port_config.c_cflag |= CSTOPB;
         } else {
-                portConfig.c_cflag &= ~CSTOPB;
+                port_config.c_cflag &= ~CSTOPB;
         }
 
-        if (portState == portOpen) {
-                tcdrain(deviceFileDescriptor);
-                tcsetattr(deviceFileDescriptor, TCSANOW, &portConfig);
+        if (port_state == PORTOPEN) {
+                tcdrain(device_file_descriptor);
+                tcsetattr(device_file_descriptor, TCSANOW, &port_config);
         }
         
         return;
